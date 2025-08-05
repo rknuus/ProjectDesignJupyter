@@ -36,7 +36,6 @@ class Project:
         }
         self.tasks.append(task)
         self.next_task_id += 1
-        # TODO(RAKN): recalculate
         return task
 
     def get_task_table(self):
@@ -1351,7 +1350,7 @@ class Project:
         for node in G.nodes():
             float_val = event_floats[node]
             category, color, is_bold = self.get_criticality_category(float_val, criticality_thresholds)
-            label = f"E{node}\n({float_val}d)"
+            label = f"E{node}"
             x, y = pos[node]
 
             ax.text(x, y, label,
@@ -1431,14 +1430,14 @@ class Project:
                     for i, (u, v) in enumerate(dashed_edges):
                         self.aoa_edge_artists[(u, v)] = edge_artists[i]
 
-        # Draw dummy arrows (thin dashed)
+        # Draw dummy arrows (dashed)
         if dummy_edges:
             edge_artists = nx.draw_networkx_edges(G, pos, edgelist=dummy_edges,
                                 edge_color='gray',
                                 arrows=True,
-                                arrowsize=15,
+                                arrowsize=arrowsize,
                                 arrowstyle='->',
-                                width=1,
+                                width=width,
                                 style='dashed',
                                 ax=ax)
             for i, (u, v) in enumerate(dummy_edges):
@@ -1838,7 +1837,7 @@ class Project:
 
             aoa_network.add_edge(start_evt, end_evt,
                                activity_id=task_id,
-                               activity_name=task["Name"],
+                               activity_name=f"{task_id} {task["Name"]}",
                                duration=task["Duration"],
                                is_dummy=False)
 

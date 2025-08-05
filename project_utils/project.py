@@ -2310,3 +2310,87 @@ class Project:
         
         return is_valid
 
+    def calculate_planned_earned_value(self, tasks: list, person_assignments: dict) -> dict:
+        """
+        Calculate planned earned value for all tasks.
+        
+        Args:
+            tasks: List of scheduled task dictionaries (must have 'Name', 'Duration', 'Finish' keys)
+            person_assignments: Dictionary mapping person names to lists of assigned tasks
+        
+        Returns:
+            Dictionary containing:
+            - 'total_duration': Sum of all task durations
+            - 'sorted_tasks': Tasks sorted by completion date with earned value calculations
+            - 'task_owners': Mapping of task names to assigned persons
+            - 'milestones': List of earned value milestone information
+            - 'summary_stats': Dictionary with project statistics
+        
+        Raises:
+            ValueError: If tasks list is empty or contains invalid data
+        """
+        if not tasks:
+            raise ValueError("Tasks list cannot be empty")
+        
+        # Step 1: Calculate the sum of all durations
+        total_duration = sum(task.get('Duration', 0) for task in tasks)
+        if total_duration <= 0:
+            raise ValueError("Total duration must be greater than zero")
+        
+        # Step 2: Sort tasks by planned completion date (Finish date)
+        sorted_tasks = sorted(tasks, key=lambda t: t.get('Finish', 'Z'))  # 'Z' as fallback for missing dates
+        
+        # Step 3: Find task owners from person assignments (reverse lookup)
+        task_owners = {}
+        for person, assigned_tasks in person_assignments.items():
+            for task in assigned_tasks:
+                task_owners[task['Name']] = person
+        
+        # Step 4: Calculate planned earned value for each task
+        cumulative_duration = 0
+        enhanced_tasks = []
+        
+        for i, task in enumerate(sorted_tasks):
+            task_name = task.get('Name', f'Task_{i+1}')
+            task_id = f"T{i+1:03d}"  # Generate task ID like T001, T002, etc.
+            duration = task.get('Duration', 0)
+            completion_date = task.get('Finish', 'N/A')
+            owner = task_owners.get(task_name, 'Unassigned')
+            
+            # Add current task duration to cumulative
+            cumulative_duration += duration
+            
+            # Calculate planned earned value as percentage
+            planned_earned_value = (cumulative_duration / total_duration) * 100
+            
+            # Create enhanced task data
+            enhanced_task = {
+                'task_id': task_id,
+                'name': task_name,
+                'owner': owner,
+                'duration': duration,
+                'completion_date': completion_date,
+                'earned_value': planned_earned_value,
+                'cumulative_duration': cumulative_duration,
+                'original_task': task  # Keep reference to original task data
+            }
+            enhanced_tasks.append(enhanced_task)
+        
+        # Step 6: Calculate summary statistics
+        critical_tasks = [task for task in sorted_tasks if task.get('TF', float('inf')) == 0]
+        
+        summary_stats = {
+            'total_tasks': len(sorted_tasks),
+            'critical_path_tasks': len(critical_tasks),
+            'average_task_duration': total_duration / len(sorted_tasks) if sorted_tasks else 0,
+            'total_people_assigned': len(person_assignments),
+            'project_completion_date': sorted_tasks[-1].get('Finish', 'N/A') if sorted_tasks else 'N/A'
+        }
+        
+        return {
+            'total_duration': total_duration,
+            'sorted_tasks': enhanced_tasks,
+            'task_owners': task_owners,
+            'summary_stats': summary_stats
+        }
+

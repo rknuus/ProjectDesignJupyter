@@ -2514,3 +2514,125 @@ class Project:
             'core_team_counts': core_team_resource_types
         }
 
+    def calculate_project_metrics(self, tasks: list, person_assignments: dict, task_resource_mapping: dict, core_team_resource_types: dict = None) -> dict:
+        """
+        Calculate comprehensive project metrics including cost, efficiency, and resource utilization.
+        
+        Args:
+            tasks: List of scheduled task dictionaries (must have 'Start', 'Finish', 'Duration', 'Name' keys)
+            person_assignments: Dictionary mapping person names to lists of assigned tasks
+            task_resource_mapping: Dictionary mapping task names to required resource types
+            core_team_resource_types: Optional dict mapping resource types to baseline counts
+        
+        Returns:
+            Dictionary containing:
+            - 'cost_man_months': Total actual effort in man-months
+            - 'duration_months': Project duration in months
+            - 'average_staffing': Average number of people working
+            - 'estimated_effort_mm': Total estimated effort in man-months
+            - 'efficiency_percent': Ratio of estimated to actual effort (%)
+            - 'frontend_ratio_percent': Ratio of architect-only duration to total duration (%)
+            - 'project_start_date': Project start date
+            - 'project_end_date': Project end date
+            - 'total_person_days': Total person-days of actual work
+        
+        Raises:
+            ValueError: If inputs are invalid
+        """
+        if not tasks or not person_assignments or not task_resource_mapping:
+            raise ValueError("All input parameters must be non-empty")
+        
+        if core_team_resource_types is None:
+            core_team_resource_types = {}
+        
+        # Get staffing distribution data
+        staffing_data = self.calculate_staffing_distribution(tasks, person_assignments, task_resource_mapping, core_team_resource_types)
+        dates = staffing_data['dates']
+        staffing_matrix = staffing_data['staffing_matrix']
+        
+        if not dates:
+            raise ValueError("No valid project dates found")
+        
+        # Calculate project duration
+        project_start_date = min(dates)
+        project_end_date = max(dates)
+        duration_days = (project_end_date - project_start_date).days + 1
+        duration_months = duration_days / 30.44  # Average days per month
+        
+        # Calculate total actual effort (cost in man-months) by integrating staffing curve
+        # This accounts for core team availability between milestone dates
+        total_person_days = 0
+        
+        for i in range(len(dates) - 1):
+            current_date = dates[i]
+            next_date = dates[i + 1]
+            
+            # Calculate number of days in this period
+            period_days = (next_date - current_date).days
+            
+            # Get staffing level for this period (use current_date staffing)
+            period_staffing = sum(staffing_matrix[current_date].values())
+            
+            # Add person-days for this period
+            total_person_days += period_staffing * period_days
+        
+        cost_man_months = total_person_days / 30.44  # Convert person-days to man-months
+        
+        # Calculate average staffing
+        average_staffing = total_person_days / duration_days if duration_days > 0 else 0
+        
+        # Calculate estimated effort (sum of all task durations)
+        estimated_effort_days = sum(task.get('Duration', 0) for task in tasks)
+        estimated_effort_mm = estimated_effort_days / 30.44  # Convert to man-months
+        
+        # Calculate efficiency (estimated / actual * 100)
+        efficiency_percent = (estimated_effort_mm / cost_man_months * 100) if cost_man_months > 0 else 0
+        
+        # Calculate front-end ratio (architect-only duration vs total duration)
+        # Find the period when only architect tasks are running
+        architect_tasks = []
+        non_architect_tasks = []
+        
+        for person, assigned_tasks in person_assignments.items():
+            person_resource_type = None
+            for task in assigned_tasks:
+                task_name = task['Name']
+                if task_name in task_resource_mapping:
+                    person_resource_type = task_resource_mapping[task_name]
+                    break
+            
+            for task in assigned_tasks:
+                if person_resource_type == 'Architect':
+                    architect_tasks.append(task)
+                else:
+                    non_architect_tasks.append(task)
+        
+        # Find the earliest non-architect task start date
+        if non_architect_tasks:
+            earliest_non_architect_start = min(task.get('Start') for task in non_architect_tasks if task.get('Start'))
+        else:
+            earliest_non_architect_start = project_end_date
+        
+        # Calculate frontend duration (from project start to first non-architect task)
+        frontend_end_date = min(earliest_non_architect_start, project_end_date)
+        frontend_duration_days = (frontend_end_date - project_start_date).days + 1
+        
+        # Ensure frontend duration is not negative and not longer than total project
+        frontend_duration_days = max(0, min(frontend_duration_days, duration_days))
+        
+        frontend_ratio_percent = (frontend_duration_days / duration_days * 100) if duration_days > 0 else 0
+        
+        return {
+            'cost_man_months': cost_man_months,
+            'duration_months': duration_months,
+            'average_staffing': average_staffing,
+            'estimated_effort_mm': estimated_effort_mm,
+            'efficiency_percent': efficiency_percent,
+            'frontend_ratio_percent': frontend_ratio_percent,
+            'project_start_date': project_start_date,
+            'project_end_date': project_end_date,
+            'total_person_days': total_person_days,
+            'frontend_duration_days': frontend_duration_days,
+            'total_project_days': len(dates)
+        }
+

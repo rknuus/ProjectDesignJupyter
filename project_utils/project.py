@@ -1975,10 +1975,6 @@ class Project:
             t.get('Name', '')           # Then by name for consistency
         ))
         
-        print(f"🎯 Assigning {len(sorted_tasks)} tasks to persons...")
-        print(f"📅 Max gap before leaving: {max_gap_days} days")
-        print("=" * 60)
-        
         # Step 3: Process each task in priority order
         for task in sorted_tasks:
             task_name = task['Name']
@@ -1997,11 +1993,6 @@ class Project:
             resource_type = task_resource_mapping[task_name]
             is_critical = task.get('TF', float('inf')) == 0
             
-            print(f"\n📋 Processing: {task_name} ({resource_type})")
-            print(f"   Duration: {task.get('Duration', 'N/A')} days")
-            print(f"   Schedule: {task['Start']} - {task['Finish']}")
-            print(f"   Critical Path: {'Yes' if is_critical else 'No'} (TF: {task.get('TF', 'N/A')})")
-            
             # Step 4: Check who has left the project due to work gaps
             newly_left = []
             for person_name in list(person_last_finish.keys()):
@@ -2012,31 +2003,17 @@ class Project:
                         people_who_left.add(person_name)
                         newly_left.append((person_name, gap_days))
             
-            if newly_left:
-                print(f"   👋 People who left due to work gaps:")
-                for person, gap in newly_left:
-                    print(f"      • {person} (gap: {gap} days)")
-            
             # Step 5: Find an available person of the correct resource type
             assigned_person = None
             
             # Check existing persons of this resource type
             if resource_type in existing_persons:
                 available_people = [p for p in existing_persons[resource_type] if p not in people_who_left]
-                print(f"   Checking {len(available_people)} available {resource_type}(s) (total: {len(existing_persons[resource_type])}):")
                 
                 for person_name in available_people:
                     if self.is_person_available(person_name, task, person_assignments):
                         assigned_person = person_name
-                        print(f"   ✓ {person_name} is available")
                         break
-                    else:
-                        print(f"   ✗ {person_name} is not available (time conflict)")
-                
-                # Show people who have left
-                left_people = [p for p in existing_persons[resource_type] if p in people_who_left]
-                if left_people:
-                    print(f"   👋 {len(left_people)} {resource_type}(s) have left: {', '.join(left_people)}")
             
             # Step 6: Create new person if no one is available
             if assigned_person is None:
@@ -2054,8 +2031,6 @@ class Project:
                 # Add to tracking dictionaries
                 existing_persons[resource_type].append(assigned_person)
                 person_assignments[assigned_person] = []
-                
-                print(f"   🆕 Created new person: {assigned_person}")
             
             # Step 7: Assign the task to the person
             if assigned_person not in person_assignments:
@@ -2065,55 +2040,11 @@ class Project:
             
             # Update when this person last worked
             person_last_finish[assigned_person] = task['Finish']
-            
-            print(f"   ➡️  Assigned to: {assigned_person}")
-            print(f"   📅 Person will be available after: {task['Finish']}")
-        
-        # Final summary
-        print(f"\n" + "=" * 60)
-        print("🎯 ASSIGNMENT SUMMARY")
-        print("=" * 60)
         
         total_people_created = sum(len(people) for people in existing_persons.values())
         active_people = len(person_assignments)
         people_left = len(people_who_left)
         total_assignments = sum(len(tasks) for tasks in person_assignments.values())
-        
-        print(f"Total people created: {total_people_created}")
-        print(f"Active people (still working): {active_people}")
-        print(f"People who left project: {people_left}")
-        print(f"Total task assignments: {total_assignments}")
-        
-        # Summary by resource type
-        print(f"\nPeople by resource type:")
-        for resource_type, people_list in sorted(existing_persons.items()):
-            active_count = len([p for p in people_list if p not in people_who_left])
-            left_count = len([p for p in people_list if p in people_who_left])
-            print(f"  {resource_type}: {len(people_list)} total ({active_count} active, {left_count} left)")
-        
-        # Show who left the project
-        if people_who_left:
-            print(f"\n👋 People who left the project:")
-            for person in sorted(people_who_left):
-                # Find their resource type
-                resource_type = "Unknown"
-                for rtype, people_list in existing_persons.items():
-                    if person in people_list:
-                        resource_type = rtype
-                        break
-                
-                last_finish = person_last_finish.get(person, "Unknown")
-                print(f"  • {person} ({resource_type}) - last worked until {last_finish}")
-        
-        # Critical path assignments
-        critical_assignments = 0
-        for person, assigned_tasks in person_assignments.items():
-            for task in assigned_tasks:
-                if task.get('TF', float('inf')) == 0:
-                    critical_assignments += 1
-        
-        print(f"\nCritical path task assignments: {critical_assignments}")
-        print(f"No-rejoinining constraint: {'✓ Enforced' if people_left > 0 else '✓ Applied (no one left)'}")
         
         return person_assignments
 
@@ -2133,22 +2064,16 @@ class Project:
         2. All tasks are assigned exactly once
         3. Task integrity (proper date fields)
         """
-        print(f"\n" + "=" * 60)
-        print("🔍 VALIDATING TASK ASSIGNMENTS")
-        print("=" * 60)
         
         validation_errors = []
         warnings = []
         
         # Check 1: No person has overlapping assignments
-        print(f"\n1️⃣  Checking for overlapping assignments per person...")
         overlap_errors = 0
         
         for person_name, assigned_tasks in person_assignments.items():
             if len(assigned_tasks) <= 1:
                 continue  # Single task can't overlap with itself
-                
-            print(f"   👤 {person_name}: {len(assigned_tasks)} tasks")
             
             # Check all pairs of tasks for this person
             person_overlaps = []
@@ -2169,16 +2094,11 @@ class Project:
                 print(f"      ❌ {len(person_overlaps)} overlap(s) found:")
                 for overlap in person_overlaps:
                     print(f"         • {overlap}")
-            else:
-                print(f"      ✅ No overlaps")
         
-        if overlap_errors == 0:
-            print(f"   ✅ No overlapping assignments found")
-        else:
+        if overlap_errors != 0:
             print(f"   ❌ Found {overlap_errors} overlapping assignments")
         
         # Check 2: All tasks are assigned exactly once
-        print(f"\n2️⃣  Checking task assignment completeness...")
         
         # Collect all assigned tasks
         assigned_task_names = set()
@@ -2216,60 +2136,9 @@ class Project:
                 print(f"      • {task_name}: {count} times")
                 validation_errors.append(f"Task '{task_name}' assigned {count} times")
         
-        if not missing_tasks and not duplicate_assignments:
-            print(f"   ✅ All {len(input_task_names)} tasks assigned exactly once")
-        
-        # Check 3: Print assignment summary
-        print(f"\n3️⃣  Assignment Summary:")
-        print(f"   📊 Total people: {len(person_assignments)}")
-        print(f"   📋 Total assignments: {sum(len(tasks) for tasks in person_assignments.values())}")
-        print(f"   📅 Input tasks: {len(tasks)}")
-        
-        # Detailed summary per person
-        print(f"\n👥 DETAILED ASSIGNMENTS BY PERSON:")
-        print("-" * 50)
-        
-        for person_name, assigned_tasks in sorted(person_assignments.items()):
-            if not assigned_tasks:
-                print(f"\n👤 {person_name}: No assignments")
-                warnings.append(f"Person '{person_name}' has no assignments")
-                continue
-            
-            # Calculate person statistics
-            total_duration = sum(task.get('Duration', 0) for task in assigned_tasks)
-            critical_count = sum(1 for task in assigned_tasks if task.get('TF', float('inf')) == 0)
-            
-            # Calculate date span
-            start_dates = [task['Start'] for task in assigned_tasks if 'Start' in task]
-            finish_dates = [task['Finish'] for task in assigned_tasks if 'Finish' in task]
-            
-            if start_dates and finish_dates:
-                earliest_start = min(start_dates)
-                latest_finish = max(finish_dates) 
-                date_span = (latest_finish - earliest_start).days + 1
-                date_range = f"{earliest_start} to {latest_finish}"
-            else:
-                date_span = 0
-                date_range = "Unknown dates"
-            
-            print(f"\n👤 {person_name}:")
-            print(f"   📋 Tasks: {len(assigned_tasks)} | Duration: {total_duration} days | Critical: {critical_count}")
-            print(f"   📅 Period: {date_range} (span: {date_span} days)")
-            print(f"   📝 Task list:")
-            
-            # Sort tasks by start date for chronological display
-            sorted_person_tasks = sorted(assigned_tasks, key=lambda t: t.get('Start', date.min))
-            
-            for task in sorted_person_tasks:
-                critical_indicator = "🔥" if task.get('TF', float('inf')) == 0 else "  "
-                duration = task.get('Duration', 'N/A')
-                start_date = task.get('Start', 'N/A')
-                finish_date = task.get('Finish', 'N/A')
-                print(f"      {critical_indicator} {task.get('Name', 'UNNAMED'):<20} | {duration:>3}d | {start_date} - {finish_date}")
-        
         # Final validation result
         print(f"\n" + "=" * 60)
-        print("🎯 VALIDATION RESULTS")
+        print("Validation result:")
         print("=" * 60)
         
         is_valid = len(validation_errors) == 0
@@ -2292,21 +2161,6 @@ class Project:
             print(f"\n⚠️  WARNINGS:")
             for i, warning in enumerate(warnings, 1):
                 print(f"   {i}. {warning}")
-        
-        # Additional statistics
-        if person_assignments:
-            workloads = [sum(task.get('Duration', 0) for task in tasks) for tasks in person_assignments.values()]
-            task_counts = [len(tasks) for tasks in person_assignments.values()]
-            
-            print(f"\n📈 WORKLOAD STATISTICS:")
-            print(f"   • Average workload: {sum(workloads)/len(workloads):.1f} days per person")
-            print(f"   • Average tasks: {sum(task_counts)/len(task_counts):.1f} tasks per person")
-            print(f"   • Max workload: {max(workloads)} days")
-            print(f"   • Min workload: {min(workloads)} days")
-            
-            if max(workloads) > 0:
-                workload_balance = min(workloads) / max(workloads) * 100
-                print(f"   • Workload balance: {workload_balance:.1f}% (higher is more balanced)")
         
         return is_valid
 

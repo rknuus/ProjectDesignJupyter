@@ -2394,3 +2394,123 @@ class Project:
             'summary_stats': summary_stats
         }
 
+    def get_project_dates(self, tasks: list) -> list:
+        """
+        Get all unique dates from task start and end dates, sorted chronologically.
+        
+        Args:
+            tasks: List of scheduled task dictionaries (must have 'Start' and 'Finish' keys)
+        
+        Returns:
+            List of unique dates sorted chronologically
+        
+        Raises:
+            ValueError: If tasks list is empty
+        """
+        if not tasks:
+            raise ValueError("Tasks list cannot be empty")
+        
+        dates = set()
+        
+        for task in tasks:
+            start_date = task.get('Start')
+            finish_date = task.get('Finish')
+            
+            if start_date and start_date != 'N/A':
+                dates.add(start_date)
+            
+            if finish_date and finish_date != 'N/A':
+                dates.add(finish_date)
+        
+        # Convert to sorted list
+        return sorted(list(dates))
+
+    def calculate_staffing_distribution(self, tasks: list, person_assignments: dict, task_resource_mapping: dict, core_team_resource_types: dict = None) -> dict:
+        """
+        Calculate staffing distribution over time by resource type.
+        
+        Args:
+            tasks: List of scheduled task dictionaries (must have 'Start', 'Finish', 'Name' keys)
+            person_assignments: Dictionary mapping person names to lists of assigned tasks
+            task_resource_mapping: Dictionary mapping task names to required resource types
+            core_team_resource_types: Optional dict mapping resource types to baseline counts (always available)
+        
+        Returns:
+            Dictionary containing:
+            - 'dates': List of unique project dates
+            - 'resource_types': List of unique resource types
+            - 'staffing_matrix': Dict mapping dates to resource type counts (includes core team)
+            - 'person_to_resource': Dict mapping person names to resource types
+            - 'core_team_counts': Dict mapping resource types to baseline counts
+        
+        Raises:
+            ValueError: If inputs are invalid
+        """
+        if not tasks or not person_assignments or not task_resource_mapping:
+            raise ValueError("All input parameters must be non-empty")
+        
+        # Initialize core team if not provided
+        if core_team_resource_types is None:
+            core_team_resource_types = {}
+        
+        # Get all unique dates
+        project_dates = self.get_project_dates(tasks)
+        
+        # Get all unique resource types (from tasks + core team)
+        task_resource_types = set(task_resource_mapping.values())
+        core_resource_types = set(core_team_resource_types.keys())
+        all_resource_types = task_resource_types.union(core_resource_types)
+        resource_types = sorted(list(all_resource_types))
+        
+        # Create person to resource type mapping
+        person_to_resource = {}
+        for person, assigned_tasks in person_assignments.items():
+            for task in assigned_tasks:
+                task_name = task['Name']
+                if task_name in task_resource_mapping:
+                    person_to_resource[person] = task_resource_mapping[task_name]
+                    break  # Each person should have consistent resource type
+        
+        # Initialize staffing matrix: {date: {resource_type: count}}
+        staffing_matrix = {}
+        for date in project_dates:
+            staffing_matrix[date] = {resource_type: 0 for resource_type in resource_types}
+        
+        # Count active resources for each date
+        for date in project_dates:
+            active_persons = set()
+            
+            # Find all persons who have active tasks on this date
+            for person, assigned_tasks in person_assignments.items():
+                for task in assigned_tasks:
+                    task_start = task.get('Start')
+                    task_finish = task.get('Finish')
+                    
+                    # Check if task is active on this date
+                    if (task_start and task_finish and 
+                        task_start != 'N/A' and task_finish != 'N/A'):
+                        if task_start <= date <= task_finish:
+                            active_persons.add(person)
+                            break  # Person is active, no need to check other tasks
+            
+            # Count actual people working by resource type
+            actual_counts = {resource_type: 0 for resource_type in resource_types}
+            for person in active_persons:
+                if person in person_to_resource:
+                    resource_type = person_to_resource[person]
+                    actual_counts[resource_type] += 1
+            
+            # Use the maximum of core team requirement and actual people working
+            for resource_type in resource_types:
+                core_requirement = core_team_resource_types.get(resource_type, 0)
+                actual_working = actual_counts[resource_type]
+                staffing_matrix[date][resource_type] = max(core_requirement, actual_working)
+        
+        return {
+            'dates': project_dates,
+            'resource_types': resource_types,
+            'staffing_matrix': staffing_matrix,
+            'person_to_resource': person_to_resource,
+            'core_team_counts': core_team_resource_types
+        }
+
